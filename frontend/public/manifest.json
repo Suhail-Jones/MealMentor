@@ -1,0 +1,13 @@
+{
+  "name": "Meal Planner",
+  "short_name": "Meals",
+  "description": "AI-powered meal planner with smart grocery shopping",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0fdf4",
+  "theme_color": "#22c55e",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
