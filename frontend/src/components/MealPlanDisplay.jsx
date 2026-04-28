@@ -12,11 +12,12 @@ function NutritionStamp({ label, value, unit }) {
   );
 }
 
-export default function MealPlanDisplay({ mealPlan, onAddToShopping, recipes, setRecipes, loadingRecipe, setLoadingRecipe, addedMeals, setAddedMeals, imageCache, setImageCache }) {
+export default function MealPlanDisplay({ mealPlan, onAddToShopping, onDeleteMeal, recipes, setRecipes, loadingRecipe, setLoadingRecipe, addedMeals, setAddedMeals, imageCache, setImageCache }) {
   const [expandedMeal, setExpandedMeal] = useState(null);
 
-  const generateRecipe = async (meal, idx) => {
-    setLoadingRecipe(prev => ({ ...prev, [idx]: true }));
+  const generateRecipe = async (meal) => {
+    const id = meal.id;
+    setLoadingRecipe(prev => ({ ...prev, [id]: true }));
     try {
       const res = await fetch(`${API}/api/meal-plan/generate-recipe`, {
         method: 'POST',
@@ -26,18 +27,25 @@ export default function MealPlanDisplay({ mealPlan, onAddToShopping, recipes, se
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
       if (!data.ingredients?.length) throw new Error('Invalid recipe response');
-      setRecipes(prev => ({ ...prev, [idx]: data }));
+      setRecipes(prev => ({ ...prev, [id]: data }));
     } catch (err) {
       console.error('Failed to generate recipe:', err);
-      setRecipes(prev => ({ ...prev, [idx]: { _error: err.message } }));
+      setRecipes(prev => ({ ...prev, [id]: { _error: err.message } }));
     } finally {
-      setLoadingRecipe(prev => ({ ...prev, [idx]: false }));
+      setLoadingRecipe(prev => ({ ...prev, [id]: false }));
     }
   };
 
-  const handleAddToShopping = (idx, ingredients) => {
+  const handleAddToShopping = (id, ingredients) => {
     onAddToShopping(ingredients);
-    setAddedMeals(prev => new Set([...prev, idx]));
+    setAddedMeals(prev => new Set([...prev, id]));
+  };
+
+  const handleDelete = (e, id) => {
+    e.stopPropagation();
+    if (window.confirm('Remove this recipe from your menu?')) {
+      onDeleteMeal(id);
+    }
   };
 
   return (
@@ -52,18 +60,29 @@ export default function MealPlanDisplay({ mealPlan, onAddToShopping, recipes, se
 
       <div className="space-y-4">
         {mealPlan.meals && mealPlan.meals.map((meal, idx) => {
-          const expanded = expandedMeal === idx;
+          const id = meal.id ?? idx;
+          const expanded = expandedMeal === id;
           const num = String(idx + 1).padStart(2, '0');
           return (
             <div
-              key={idx}
+              key={id}
               className="anim-fade-up bg-cream-warm border border-paper paper-grain relative overflow-hidden"
               style={{ animationDelay: `${idx * 0.06}s` }}
             >
+              {/* Delete button (top-right, absolute) */}
+              <button
+                onClick={(e) => handleDelete(e, id)}
+                className="absolute top-2 right-2 z-10 w-7 h-7 flex items-center justify-center rounded-full text-ink-muted hover:text-rust hover:bg-cream transition-all font-mono text-base leading-none"
+                aria-label="Delete recipe"
+                title="Remove from menu"
+              >
+                ×
+              </button>
+
               {/* Summary */}
               <button
-                onClick={() => setExpandedMeal(expanded ? null : idx)}
-                className="w-full text-left p-3 flex items-center gap-3"
+                onClick={() => setExpandedMeal(expanded ? null : id)}
+                className="w-full text-left p-3 pr-10 flex items-center gap-3"
               >
                 <MealImage
                   mealName={meal.name}
@@ -119,7 +138,7 @@ export default function MealPlanDisplay({ mealPlan, onAddToShopping, recipes, se
                     </div>
                   </div>
 
-                  {!recipes[idx] && meal.ingredients && (
+                  {!recipes[id] && meal.ingredients && (
                     <div className="mb-4">
                       <p className="font-mono text-[10px] uppercase tracking-editorial text-terracotta mb-2">— Ingredients —</p>
                       <div className="flex flex-wrap gap-1.5">
@@ -132,7 +151,7 @@ export default function MealPlanDisplay({ mealPlan, onAddToShopping, recipes, se
                     </div>
                   )}
 
-                  {recipes[idx] && (recipes[idx].ingredients?.length > 0 || recipes[idx].instructions) && (
+                  {recipes[id] && (recipes[id].ingredients?.length > 0 || recipes[id].instructions) && (
                     <div className="space-y-5 mb-4 anim-fade">
                       <div>
                         <div className="flex items-baseline gap-2 mb-2">
@@ -140,7 +159,7 @@ export default function MealPlanDisplay({ mealPlan, onAddToShopping, recipes, se
                           <span className="font-serif italic text-xs text-ink-muted">({meal.servings} servings)</span>
                         </div>
                         <ul className="bg-cream border border-paper p-3 space-y-1.5">
-                          {recipes[idx].ingredients?.map((ing, i) => (
+                          {recipes[id].ingredients?.map((ing, i) => (
                             <li key={i} className="flex items-baseline gap-2 text-sm">
                               <span className="text-terracotta text-[10px]">✦</span>
                               <span>
@@ -155,7 +174,7 @@ export default function MealPlanDisplay({ mealPlan, onAddToShopping, recipes, se
                       <div>
                         <p className="font-mono text-[10px] uppercase tracking-editorial text-terracotta mb-2">— Method —</p>
                         <ol className="space-y-3">
-                          {(recipes[idx].instructions || '').split('\n').filter(s => s.trim()).map((step, i) => {
+                          {(recipes[id].instructions || '').split('\n').filter(s => s.trim()).map((step, i) => {
                             const cleaned = step.replace(/^\d+\.\s*/, '');
                             return (
                               <li key={i} className="flex gap-3">
@@ -172,39 +191,39 @@ export default function MealPlanDisplay({ mealPlan, onAddToShopping, recipes, se
                   )}
 
                   <div className="flex flex-wrap gap-2">
-                    {(!recipes[idx]?.ingredients?.length) && (
+                    {(!recipes[id]?.ingredients?.length) && (
                       <button
-                        onClick={() => generateRecipe(meal, idx)}
-                        disabled={loadingRecipe[idx]}
+                        onClick={() => generateRecipe(meal)}
+                        disabled={loadingRecipe[id]}
                         className="flex-1 btn-forest py-2.5 font-mono uppercase tracking-editorial text-xs disabled:opacity-60 flex items-center justify-center gap-2"
                       >
-                        {loadingRecipe[idx] ? (
+                        {loadingRecipe[id] ? (
                           <>
                             <span className="w-3 h-3 border-2 border-cream border-t-transparent rounded-full animate-spin" />
                             Composing…
                           </>
-                        ) : recipes[idx]?._error ? (
+                        ) : recipes[id]?._error ? (
                           <>Retry Recipe ↺</>
                         ) : (
                           <>Reveal Recipe ✦</>
                         )}
                       </button>
                     )}
-                    {recipes[idx]?._error && (
+                    {recipes[id]?._error && (
                       <p className="w-full font-mono text-[10px] text-rust uppercase tracking-editorial text-center py-1">
                         Generation failed — tap retry
                       </p>
                     )}
-                    {recipes[idx]?.ingredients?.length > 0 && (
+                    {recipes[id]?.ingredients?.length > 0 && (
                       <button
-                        onClick={() => handleAddToShopping(idx, recipes[idx].ingredients)}
-                        disabled={addedMeals.has(idx)}
+                        onClick={() => handleAddToShopping(id, recipes[id].ingredients)}
+                        disabled={addedMeals.has(id)}
                         className={`flex-1 py-2.5 font-mono uppercase tracking-editorial text-xs transition-all
-                          ${addedMeals.has(idx)
+                          ${addedMeals.has(id)
                             ? 'bg-forest/10 text-forest border-2 border-forest/30 cursor-not-allowed'
                             : 'btn-terracotta'}`}
                       >
-                        {addedMeals.has(idx) ? '✓ Added to Market' : 'Send to Market →'}
+                        {addedMeals.has(id) ? '✓ Added to Market' : 'Send to Market →'}
                       </button>
                     )}
                   </div>

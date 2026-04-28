@@ -8,6 +8,13 @@ import BottomNav from '../components/BottomNav';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+const newId = () =>
+  (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+const withIds = (meals) => (meals ?? []).map(m => ({ ...m, id: m.id ?? newId() }));
+
 export default function MealPlanner() {
   const [hasStarted, setHasStarted] = useState(false);
   const [mealPlan, setMealPlan] = useState(null);
@@ -29,7 +36,12 @@ export default function MealPlanner() {
     setError(null);
     try {
       const { data: plan } = await axios.post(`${API}/api/meal-plan/generate`, preferences);
-      setMealPlan(plan);
+      const newMeals = withIds(plan.meals);
+      // Append new meals to existing plan instead of replacing
+      setMealPlan(prev => ({
+        ...(prev ?? {}),
+        meals: [...(prev?.meals ?? []), ...newMeals],
+      }));
       setActiveTab('meals');
     } catch (err) {
       console.error('Full error:', err);
@@ -37,6 +49,13 @@ export default function MealPlanner() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteMeal = (id) => {
+    setMealPlan(prev => prev ? { ...prev, meals: (prev.meals ?? []).filter(m => m.id !== id) } : prev);
+    setRecipes(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setLoadingRecipe(prev => { const next = { ...prev }; delete next[id]; return next; });
+    setAddedMeals(prev => { const next = new Set(prev); next.delete(id); return next; });
   };
 
   const handleAddToShopping = (ingredients) => {
@@ -189,6 +208,7 @@ export default function MealPlanner() {
               ? <MealPlanDisplay
                   mealPlan={mealPlan}
                   onAddToShopping={handleAddToShopping}
+                  onDeleteMeal={handleDeleteMeal}
                   recipes={recipes}
                   setRecipes={setRecipes}
                   loadingRecipe={loadingRecipe}
