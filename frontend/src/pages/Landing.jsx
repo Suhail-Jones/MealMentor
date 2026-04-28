@@ -77,7 +77,7 @@ export default function Landing({ onStart }) {
                   <path id="circle-path" d="M 50,50 m -38,0 a 38,38 0 1,1 76,0 a 38,38 0 1,1 -76,0" />
                 </defs>
                 <text className="font-mono" fontSize="7" fill="var(--forest)">
-                  <textPath href="#circle-path" textLength="238" lengthAdjust="spacingAndGlyphs">SEASONAL · AI KITCHEN ·</textPath>
+                  <textPath href="#circle-path" textLength="238" lengthAdjust="spacing" xmlSpace="preserve">AI KITCHEN     ·     PERFECTLY SEASONED     ·     ALWAYS TASTY     ·     </textPath>
                 </text>
               </svg>
               <div className="absolute inset-4 rounded-full border-2 border-forest flex items-center justify-center bg-cream">
