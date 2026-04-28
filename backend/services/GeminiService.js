@@ -229,10 +229,20 @@ async function generateMealImage(searchTerm) {
   return null;
 }
 
-async function generateFullRecipe(mealName, servings) {
+async function generateFullRecipe(mealName, servings, opts = {}) {
+  const { baseIngredients, maxIngredients } = opts;
+
+  const baseIngredientsBlock = Array.isArray(baseIngredients) && baseIngredients.length
+    ? `\nSTRICT INGREDIENT LIST — you MUST use ONLY these base ingredients (add quantities/units, but do not add new ingredients):\n${baseIngredients.map(i => `- ${i}`).join('\n')}\n`
+    : '';
+
+  const maxIngredientsRule = Number.isFinite(maxIngredients) && maxIngredients > 0
+    ? `\nHARD LIMIT: The "ingredients" array MUST contain ${maxIngredients} or fewer items. This is non-negotiable. Combine or omit minor ingredients (salt/pepper/oil count toward the limit).\n`
+    : '';
+
   const prompt = `
 You are a professional chef. Generate a detailed recipe for "${mealName}" with ${servings} servings.
-
+${baseIngredientsBlock}${maxIngredientsRule}
 Rules for ingredients:
 - The "name" field must be the BASE ingredient only — no prep instructions, no cooking method, no cut descriptions.
   WRONG: "red bell pepper, cut into 1-inch pieces" | "boneless lamb shoulder, cut into 1-inch cubes" | "garlic, minced"
@@ -302,6 +312,12 @@ Categories must be one of: produce, dairy, meat, seafood, grains, canned, spices
 
   if (!parsed.ingredients || parsed.ingredients.length === 0) {
     console.warn('[generateFullRecipe] ingredients empty in parsed result:', parsed);
+  }
+
+  // Hard-enforce maxIngredients cap (model sometimes ignores)
+  if (Number.isFinite(maxIngredients) && maxIngredients > 0 && Array.isArray(parsed.ingredients) && parsed.ingredients.length > maxIngredients) {
+    console.warn(`[generateFullRecipe] model returned ${parsed.ingredients.length} ingredients, trimming to ${maxIngredients}`);
+    parsed.ingredients = parsed.ingredients.slice(0, maxIngredients);
   }
 
   return parsed;

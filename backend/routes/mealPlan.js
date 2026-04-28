@@ -62,9 +62,9 @@ router.post('/generate-image', async (req, res) => {
 // Generate full recipe (instructions + detailed ingredients) for a single meal
 router.post('/generate-recipe', async (req, res) => {
   try {
-    const { mealName, servings } = req.body;
+    const { mealName, servings, baseIngredients, maxIngredients } = req.body;
     if (!mealName) return res.status(400).json({ error: 'mealName is required' });
-    const recipe = await generateFullRecipe(mealName, servings || 2);
+    const recipe = await generateFullRecipe(mealName, servings || 2, { baseIngredients, maxIngredients });
     res.json(recipe);
   } catch (err) {
     console.error('Recipe generation error:', err.message);

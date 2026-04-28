@@ -36,7 +36,9 @@ export default function MealPlanner() {
     setError(null);
     try {
       const { data: plan } = await axios.post(`${API}/api/meal-plan/generate`, preferences);
-      const newMeals = withIds(plan.meals);
+      const maxIngredients = preferences?.recipeStyle?.maxIngredients ?? null;
+      // Stamp maxIngredients onto each meal so full-recipe generation respects it
+      const newMeals = withIds(plan.meals).map(m => ({ ...m, maxIngredients }));
       // Append new meals to existing plan instead of replacing
       setMealPlan(prev => ({
         ...(prev ?? {}),

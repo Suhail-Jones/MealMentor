@@ -22,7 +22,12 @@ export default function MealPlanDisplay({ mealPlan, onAddToShopping, onDeleteMea
       const res = await fetch(`${API}/api/meal-plan/generate-recipe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mealName: meal.name, servings: meal.servings }),
+        body: JSON.stringify({
+          mealName: meal.name,
+          servings: meal.servings,
+          baseIngredients: meal.ingredients || [],
+          maxIngredients: meal.maxIngredients ?? null,
+        }),
       });
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
