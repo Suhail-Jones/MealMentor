@@ -9,12 +9,12 @@ export default function Landing({ onStart }) {
   const wordmark = 'MealMentor'.split('');
 
   const floatingIcons = [
-    { char: '🌿', top: '12px',  left: '12px',  delay: '0s',   size: 'text-3xl' },
-    { char: '🥬', top: '90px',  right: '14px', delay: '1.2s', size: 'text-2xl' },
-    { char: '🫒', top: '220px', left: '10px',  delay: '0.6s', size: 'text-2xl' },
-    { char: '🧄', top: '340px', right: '12px', delay: '1.8s', size: 'text-2xl' },
-    { char: '🌾', top: '480px', left: '14px',  delay: '0.3s', size: 'text-3xl' },
-    { char: '🍋', top: '580px', right: '16px', delay: '1.5s', size: 'text-2xl' },
+    { char: '🥬', delay: '0.4s'  },
+    { char: '🫒', delay: '0.9s'  },
+    { char: '🌶️', delay: '1.1s'  },
+    { char: '🧄', delay: '1.4s'  },
+    { char: '🍋', delay: '0.6s'  },
+    { char: '🥕', delay: '1.7s'  },
   ];
 
   return (
@@ -22,7 +22,7 @@ export default function Landing({ onStart }) {
 
 
       {/* Horizontal vine draped across top */}
-      <svg className="w-full anim-fade" style={{ animationDelay: '0.2s', height: '72px', display: 'block' }} viewBox="0 0 400 72" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg className="w-full anim-fade" style={{ animationDelay: '0.2s', height: '52px', display: 'block' }} viewBox="0 0 400 72" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
         {/* Main branch */}
         <path d="M -10 28 Q 40 18 80 30 Q 120 42 160 26 Q 200 12 240 28 Q 280 44 320 24 Q 360 8 410 22" stroke="var(--forest)" strokeWidth="1.8" strokeLinecap="round" fill="none" opacity="0.7"/>
         {/* Tendrils hanging down */}
@@ -57,20 +57,13 @@ export default function Landing({ onStart }) {
           <div className="h-px flex-1 bg-forest/40" />
         </div>
 
-        {/* Icon row */}
-        <div className="flex items-center justify-center gap-5 py-3 pointer-events-none select-none">
-          {floatingIcons.map((f, i) => (
-            <span key={i} className={`${f.size} opacity-50 anim-float`} style={{ animationDelay: f.delay }}>
-              {f.char}
-            </span>
-          ))}
-        </div>
-
         {/* Hero */}
         <div className="landing-hero flex flex-col pt-3 pb-2">
 
-          {/* Circular stamp */}
-          <div className="landing-stamp relative mb-4 self-start anim-stamp" style={{ animationDelay: '0.3s' }}>
+          {/* Stamp + floating icons row */}
+          <div className="flex items-center gap-5 mb-4">
+            {/* Circular stamp */}
+            <div className="landing-stamp relative flex-shrink-0 anim-stamp" style={{ animationDelay: '0.3s' }}>
             <div className="relative w-24 h-24">
               <svg className="absolute inset-0 w-full h-full anim-rotate-seal" viewBox="0 0 100 100">
                 <defs>
@@ -84,6 +77,16 @@ export default function Landing({ onStart }) {
                 <div className="absolute inset-1 rounded-full border border-forest/30" />
                 <span className="font-serif text-3xl italic text-forest leading-none">M</span>
               </div>
+            </div>
+            </div>
+
+            {/* Floating icons to the right of stamp */}
+            <div className="grid grid-cols-3 gap-3 pointer-events-none select-none">
+              {floatingIcons.map((f, i) => (
+                <span key={i} className="text-3xl opacity-50 anim-float" style={{ animationDelay: f.delay }}>
+                  {f.char}
+                </span>
+              ))}
             </div>
           </div>
 
