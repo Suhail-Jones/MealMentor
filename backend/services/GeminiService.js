@@ -119,6 +119,12 @@ DIVERSITY RULES (strictly enforce):
 - Make it a dish a home cook would be genuinely excited to make.
 ${alreadyNote}
 
+INGREDIENT RULES (strictly enforce):
+- Use ONLY common, everyday ingredients sold at mainstream US grocery stores like Walmart and Kroger.
+- Every ingredient in the list must be a product a shopper can pick up off a standard supermarket shelf — no specialty imports, no ethnic-market-only items, no restaurant-supply ingredients.
+- If a dish traditionally uses a hard-to-find ingredient, substitute with the closest mainstream equivalent (e.g. use "fish sauce" not "prahok", use "soy sauce" not "tamari shoyu", use "ground cumin" not "black cumin seeds").
+- Name ingredients exactly as they appear on a grocery store shelf or produce section label (e.g. "chicken thighs" not "bone-in skin-on free-range chicken thighs", "canned diced tomatoes" not "San Marzano DOP whole peeled tomatoes").
+
 ${foodPrefDesc}
 
 Requirements:
@@ -291,6 +297,9 @@ Rules for ingredients:
 - Use SPECIFIC names. Never say "vegetables" — say "broccoli" or "spinach".
 - Include exact quantities and units.
 - Put all prep details (minced, diced, cut into cubes, etc.) in the instructions steps only.
+- Use ONLY common, everyday ingredients sold at mainstream US grocery stores like Walmart and Kroger.
+- Name each ingredient exactly as it appears on a standard grocery store shelf or produce label (e.g. "chicken thighs" not "free-range bone-in thighs", "canned diced tomatoes" not "San Marzano peeled tomatoes").
+- If the dish traditionally uses a hard-to-find or specialty ingredient, substitute with the closest widely-available equivalent.
 
 Rules for instructions:
 - Write exactly 4-6 numbered steps.
