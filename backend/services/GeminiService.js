@@ -14,35 +14,59 @@ const CUISINE_ROTATION = [
 ];
 
 async function generateMealPlan(preferences) {
+  // Non-streaming wrapper: collects results from streaming variant.
+  const meals = [];
+  await generateMealPlanStream(preferences, (meal) => {
+    if (meal) meals.push(meal);
+  });
+  return { meals };
+}
+
+// Streaming generator: invokes onMeal(meal, idx, total, err?) as each meal completes.
+// Uses bounded concurrency (CONCURRENCY workers) for big wall-time speedup vs serial.
+async function generateMealPlanStream(preferences, onMeal) {
   const { mealsPerWeek, servings, dietaryRestrictions, allergies, macroPreferences, foodPreferences, recipeStyle } = preferences;
+  const total = mealsPerWeek;
 
-  // Shuffle cuisine rotation so each generation session is different
   const shuffledCuisines = [...CUISINE_ROTATION].sort(() => Math.random() - 0.5);
+  const userCuisines = foodPreferences?.Cuisines ?? [];
 
-  const batches = [];
-  let remaining = mealsPerWeek;
-  while (remaining > 0) {
-    batches.push(Math.min(remaining, BATCH_SIZE));
-    remaining -= BATCH_SIZE;
-  }
-
-  const allMeals = [];
-  for (let i = 0; i < batches.length; i++) {
-    // If user picked cuisines, rotate through those; otherwise use the shuffled global list
-    const userCuisines = foodPreferences?.Cuisines ?? [];
+  // Build per-meal task list with assigned cuisine
+  const tasks = [];
+  for (let i = 0; i < total; i++) {
     const cuisineHint = userCuisines.length > 0
       ? userCuisines[i % userCuisines.length]
       : shuffledCuisines[i % shuffledCuisines.length];
-
-    const meals = await generateBatchWithRetry(
-      batches[i], servings, dietaryRestrictions, allergies,
-      macroPreferences, foodPreferences ?? {}, cuisineHint,
-      3, allMeals.map(m => m.name), recipeStyle ?? {}
-    );
-    allMeals.push(...meals);
+    tasks.push({ idx: i, cuisineHint });
   }
 
-  return { meals: allMeals };
+  const CONCURRENCY = 4;
+  let nextTask = 0;
+  const completed = []; // shared so later workers see earlier names for diversity
+
+  async function worker() {
+    while (true) {
+      const myTask = nextTask++;
+      if (myTask >= tasks.length) return;
+      const { idx, cuisineHint } = tasks[myTask];
+      try {
+        const meals = await generateBatchWithRetry(
+          1, servings, dietaryRestrictions, allergies,
+          macroPreferences, foodPreferences ?? {}, cuisineHint,
+          3, completed.map(m => m.name), recipeStyle ?? {}
+        );
+        for (const meal of meals) {
+          completed.push(meal);
+          try { onMeal(meal, idx, total, null); } catch {}
+        }
+      } catch (err) {
+        try { onMeal(null, idx, total, err); } catch {}
+      }
+    }
+  }
+
+  const workerCount = Math.min(CONCURRENCY, tasks.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 }
 
 function sleep(ms) {
@@ -61,7 +85,7 @@ async function generateBatchWithRetry(count, servings, dietaryRestrictions, alle
       // Only retry on transient errors
       if (status && status !== 503 && status !== 429 && status !== 500) throw err;
       const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000); // exp backoff, cap 30s
-      console.log(`Batch attempt ${attempt} failed (${status || 'parse error'})${useFallback ? '' : ''}, retrying in ${delay/1000}s${attempt > 2 ? ' [fallback model]' : ''}...`);
+      console.log(`Batch attempt ${attempt} failed (${status || 'parse error'}: ${err.message?.slice(0, 120)}), retrying in ${delay/1000}s${attempt > 2 ? ' [fallback model]' : ''}...`);
       await sleep(delay);
     }
   }
@@ -128,13 +152,30 @@ Respond ONLY with valid JSON in this exact format, no extra text:
     `${apiUrl}?key=${process.env.GEMINI_API_KEY}`,
     {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 1.0, maxOutputTokens: 4096 },
+      generationConfig: {
+        temperature: 1.0,
+        maxOutputTokens: 2048,
+        // Disable thinking tokens — Gemini 2.5 reserves part of output budget for "reasoning"
+        // which can starve actual JSON output and cause truncation/parse errors.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }
   );
 
   const rawText = response.data.candidates[0].content.parts[0].text;
-  const jsonText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  const parsed = JSON.parse(jsonText);
+  let jsonText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  // If model wrapped JSON in prose, extract first {...} block
+  if (!jsonText.startsWith('{')) {
+    const match = jsonText.match(/\{[\s\S]*\}/);
+    if (match) jsonText = match[0];
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (e) {
+    console.warn('[generateBatch] JSON parse failed. Raw output (first 300 chars):', rawText.slice(0, 300));
+    throw e;
+  }
   return parsed.meals;
 }
 
@@ -323,4 +364,4 @@ Categories must be one of: produce, dairy, meat, seafood, grains, canned, spices
   return parsed;
 }
 
-module.exports = { generateMealPlan, generateMealImage, generateFullRecipe };
+module.exports = { generateMealPlan, generateMealPlanStream, generateMealImage, generateFullRecipe };

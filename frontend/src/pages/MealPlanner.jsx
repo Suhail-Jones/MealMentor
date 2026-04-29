@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import axios from 'axios';
 import Landing from './Landing';
 import PreferencesForm from '../components/PreferencesForm';
 import MealPlanDisplay from '../components/MealPlanDisplay';
@@ -30,24 +29,67 @@ export default function MealPlanner() {
   const [priceData, setPriceData] = useState(null);
   const [priceLoading, setPriceLoading] = useState(false);
   const [priceError, setPriceError] = useState(null);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
 
   const handleGenerateMealPlan = async (preferences) => {
     setLoading(true);
     setError(null);
+    setProgress({ done: 0, total: preferences?.mealsPerWeek || 0 });
+
+    const maxIngredients = preferences?.recipeStyle?.maxIngredients ?? null;
+    let switchedTab = false;
+
     try {
-      const { data: plan } = await axios.post(`${API}/api/meal-plan/generate`, preferences);
-      const maxIngredients = preferences?.recipeStyle?.maxIngredients ?? null;
-      // Stamp maxIngredients onto each meal so full-recipe generation respects it
-      const newMeals = withIds(plan.meals).map(m => ({ ...m, maxIngredients }));
-      // Append new meals to existing plan instead of replacing
-      setMealPlan(prev => ({
-        ...(prev ?? {}),
-        meals: [...(prev?.meals ?? []), ...newMeals],
-      }));
-      setActiveTab('meals');
+      const res = await fetch(`${API}/api/meal-plan/generate-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preferences),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (!payload) continue;
+          if (payload === '[DONE]') break;
+          try {
+            const evt = JSON.parse(payload);
+            if (evt.error) {
+              setError(evt.error);
+              continue;
+            }
+            if (evt.meal) {
+              const stamped = { ...evt.meal, id: newId(), maxIngredients };
+              setMealPlan(prev => ({
+                ...(prev ?? {}),
+                meals: [...(prev?.meals ?? []), stamped],
+              }));
+              setProgress(p => ({ done: p.done + 1, total: evt.total ?? p.total }));
+              if (!switchedTab) {
+                setActiveTab('meals');
+                switchedTab = true;
+              }
+            }
+          } catch { /* skip malformed line */ }
+        }
+      }
     } catch (err) {
       console.error('Full error:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to generate meal plan');
+      setError(err.message || 'Failed to generate meal plan');
     } finally {
       setLoading(false);
     }
@@ -154,7 +196,8 @@ export default function MealPlanner() {
   return (
     <div className="h-screen flex flex-col max-w-md mx-auto relative bg-paper paper-grain">
 
-      {loading && (
+      {/* Full-screen overlay only while waiting for FIRST meal — drops as soon as a card arrives */}
+      {loading && progress.done === 0 && (
         <div className="absolute inset-0 z-50 bg-cream/95 paper-grain flex flex-col items-center justify-center gap-5 anim-fade">
           <div className="relative">
             <svg className="w-20 h-20 anim-rotate-seal" viewBox="0 0 100 100">
@@ -169,8 +212,18 @@ export default function MealPlanner() {
           </div>
           <div className="text-center">
             <p className="font-serif text-xl italic text-forest">Composing your menu</p>
-            <p className="font-mono text-[10px] uppercase tracking-editorial text-ink-muted mt-2">The AI chef is tasting...</p>
+            <p className="font-mono text-[10px] uppercase tracking-editorial text-ink-muted mt-2">
+              {progress.total > 0 ? `Plating meal 1 of ${progress.total}…` : 'The AI chef is tasting…'}
+            </p>
           </div>
+        </div>
+      )}
+
+      {/* Inline progress chip: shown after first meal arrives, while remaining still stream */}
+      {loading && progress.done > 0 && progress.done < progress.total && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-forest text-cream font-mono text-[10px] uppercase tracking-editorial px-3 py-1.5 rounded-full shadow-lg anim-fade flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-terracotta animate-pulse" />
+          Composing meal {progress.done + 1} of {progress.total}…
         </div>
       )}
 

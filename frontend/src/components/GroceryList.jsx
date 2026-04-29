@@ -22,6 +22,14 @@ function StorePriceLink({ entry, storeKey }) {
       <div className="flex items-baseline gap-1.5">
         <span className="font-serif text-sm tabular-nums">{entry.price}</span>
         <span className="font-mono text-[9px] uppercase tracking-editorial opacity-70">{style.label}</span>
+        {entry.estimated && (
+          <span
+            title="Estimated price — store search lookup didn't find an exact match. AI estimate based on typical 2025 US prices."
+            className="font-mono text-[8px] uppercase tracking-editorial bg-ink-muted/15 text-ink-muted px-1 py-px rounded-sm"
+          >
+            est.
+          </span>
+        )}
       </div>
       {(sizeLabel || perOzLabel) && (
         <span className="font-mono text-[9px] opacity-60 mt-0.5 tabular-nums">
@@ -33,7 +41,8 @@ function StorePriceLink({ entry, storeKey }) {
     <span className="font-mono text-[9px] uppercase tracking-editorial opacity-70">{style.label} →</span>
   );
 
-  const base = `inline-flex items-center bg-cream border px-2.5 py-1.5 transition-all ${style.tint}`;
+  const baseBorder = entry.estimated ? 'border-dashed' : '';
+  const base = `inline-flex items-center bg-cream border ${baseBorder} px-2.5 py-1.5 transition-all ${style.tint}`;
 
   if (entry.url) {
     return (
@@ -200,7 +209,7 @@ export default function GroceryList({
       {storeTotals && (
         <div className="mb-5 anim-fade-up">
           <p className="font-mono text-[9px] text-ink-muted text-center mb-2 italic">
-            Estimates only · compare by per-oz for fair judgment
+            Estimates only · items marked <span className="not-italic">est.</span> are AI-priced when stores lack the item
           </p>
           <div className="grid grid-cols-2 gap-3">
             <a href="https://www.walmart.com/grocery" target="_blank" rel="noopener noreferrer"

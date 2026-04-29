@@ -1,6 +1,8 @@
 const axios = require('axios');
 require('events').EventEmitter.defaultMaxListeners = 30;
 
+const GEMINI_PRICE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const priceCache   = new Map();
 
@@ -125,6 +127,36 @@ function isProcessedMismatch(productTitle, ingredient) {
   return false;
 }
 
+// Composite/prepared product words (soup, stew, sauce…) — if the title has one
+// and the ingredient doesn't, it's a different category of product.
+const COMPOSITE_INDICATORS = new Set([
+  'soup','stew','salad','bowl','sauce','salsa','dip','pizza','pasta',
+  'casserole','lasagna','sandwich','wrap','burrito','taco','quesadilla',
+  'medley','combo','meal','dinner','entree','kit','bake','frozen meal',
+]);
+
+function isCompositeMismatch(title, ingredient) {
+  const t = title.toLowerCase();
+  const i = ingredient.toLowerCase();
+  for (const w of COMPOSITE_INDICATORS) {
+    if (t.includes(w) && !i.includes(w)) return true;
+  }
+  return false;
+}
+
+// "X with Y" pattern: primary product is on the LEFT of " with ".
+// If ingredient keywords appear ONLY on the right, the ingredient is just
+// an accompaniment, not the actual product. (E.g. "Corn with Bell Peppers" for "bell pepper".)
+function isAccompanimentOnly(title, ingredient) {
+  const t = title.toLowerCase();
+  const idx = t.indexOf(' with ');
+  if (idx === -1) return false;
+  const left = t.slice(0, idx);
+  const kws  = ingredientKeywords(ingredient);
+  if (!kws.length) return false;
+  return !kws.some(kw => left.includes(kw));
+}
+
 function ingredientKeywords(ingredient) {
   return ingredient
     .toLowerCase()
@@ -133,14 +165,21 @@ function ingredientKeywords(ingredient) {
     .filter(w => w.length > 2 && !STOP_WORDS.has(w));
 }
 
-// Returns true if product title contains ≥ half the ingredient keywords and is not a processed mismatch
+// Returns true if product title is a real match for the ingredient.
+// Multi-layered: processed mismatch, composite product, "X with Y" accompaniment, then keyword overlap.
 function isRelevantProduct(productTitle, ingredient) {
   if (!productTitle) return false;
   if (isProcessedMismatch(productTitle, ingredient)) return false;
+  if (isCompositeMismatch(productTitle, ingredient)) return false;
+  if (isAccompanimentOnly(productTitle, ingredient)) return false;
+
   const title = productTitle.toLowerCase();
   const kws = ingredientKeywords(ingredient);
   if (!kws.length) return true;
   const hits = kws.filter(kw => title.includes(kw));
+  // Short ingredients (1-2 keywords) require ALL to match — strict, avoids partial matches
+  // hijacking results (e.g. "bell" matching "bell pepper jelly", "pepper" matching "pepper jack").
+  if (kws.length <= 2) return hits.length === kws.length;
   return hits.length >= Math.ceil(kws.length / 2);
 }
 
@@ -380,6 +419,75 @@ async function fetchWalmartPrice(ingredient) {
   }
 }
 
+// ── Gemini fallback (estimated price) ─────────────────────────────────────────
+
+// Build a search URL pointing the user to the store's site for this ingredient.
+function buildSearchUrl(store, ingredient) {
+  const q = encodeURIComponent(ingredient);
+  if (store === 'walmart') return `https://www.walmart.com/search?q=${q}`;
+  if (store === 'kroger')  return `https://www.kroger.com/search?query=${q}`;
+  return null;
+}
+
+async function estimateGeminiPrice(ingredient, store) {
+  if (!process.env.GEMINI_API_KEY) return null;
+
+  const prompt = `You are a US grocery price estimator. For the ingredient "${ingredient}" sold at ${store === 'walmart' ? 'Walmart' : 'Kroger'} in 2025, estimate a realistic price for a typical single-package size most home cooks buy.
+
+Respond ONLY with valid JSON, no extra text:
+{
+  "available": true,
+  "price": 4.99,
+  "size": "1 lb",
+  "totalOz": 16
+}
+
+Rules:
+- Use realistic 2025 US prices. Be neither too high nor too low.
+- "size" is a human-readable label (e.g. "1 lb", "16 oz", "12 oz").
+- "totalOz" is the size converted to ounces (1 lb = 16, 1 kg = 35.27).
+- If this ingredient is genuinely not sold at this store, respond with: { "available": false }
+`;
+
+  try {
+    const res = await axios.post(
+      `${GEMINI_PRICE_URL}?key=${process.env.GEMINI_API_KEY}`,
+      {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 256,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      },
+      { timeout: 10000 }
+    );
+    const raw = res.data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    let jsonText = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    if (!jsonText.startsWith('{')) {
+      const m = jsonText.match(/\{[\s\S]*\}/);
+      if (m) jsonText = m[0];
+    }
+    const parsed = JSON.parse(jsonText);
+    if (parsed.available === false || typeof parsed.price !== 'number') return null;
+
+    const totalOz = typeof parsed.totalOz === 'number' ? parsed.totalOz : null;
+    const perOz   = totalOz && parsed.price ? parsed.price / totalOz : null;
+    return {
+      name:       ingredient,
+      price:      `$${Number(parsed.price).toFixed(2)}`,
+      url:        buildSearchUrl(store, ingredient),
+      unitSize:   parsed.size ?? null,
+      totalOz,
+      pricePerOz: perOz ? Math.round(perOz * 1000) / 1000 : null,
+      estimated:  true, // flag for UI to show "est." badge
+    };
+  } catch (err) {
+    console.warn(`[Gemini est] failed for "${ingredient}" @ ${store}:`, err.message);
+    return null;
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 // Lookup a single ingredient: Walmart first → use brand/size to guide Kroger
@@ -394,12 +502,19 @@ async function lookupSingle(ingredient) {
   console.log(`[fetching] "${key}"`);
 
   // Walmart first so we can use brand + size to guide Kroger
-  const walmart = await fetchWalmartPrice(key);
+  let walmart = await fetchWalmartPrice(key);
 
-  const kroger = await fetchKrogerPrice(key, {
+  let kroger = await fetchKrogerPrice(key, {
     brandHint: walmart?.brand   ?? null,
     targetOz:  walmart?.totalOz ?? null,
   });
+
+  // Fallback: Gemini estimate when real-store lookup found nothing relevant.
+  // Run both fallbacks in parallel — only when needed, so it stays cheap.
+  const fallbacks = [];
+  if (!walmart) fallbacks.push(estimateGeminiPrice(key, 'walmart').then(r => { if (r) walmart = r; }));
+  if (!kroger)  fallbacks.push(estimateGeminiPrice(key, 'kroger').then(r  => { if (r) kroger  = r; }));
+  if (fallbacks.length) await Promise.all(fallbacks);
 
   const prices = { walmart, kroger };
   setCache(key, prices);

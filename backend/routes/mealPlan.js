@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 
-let generateMealPlan, generateMealImage, generateFullRecipe, buildGroceryList;
+let generateMealPlan, generateMealPlanStream, generateMealImage, generateFullRecipe, buildGroceryList;
 try {
-  ({ generateMealPlan, generateMealImage, generateFullRecipe } = require('../services/GeminiService'));
+  ({ generateMealPlan, generateMealPlanStream, generateMealImage, generateFullRecipe } = require('../services/GeminiService'));
   console.log('GeminiService loaded OK');
 } catch (e) {
   console.error('Failed to load GeminiService:', e.message);
@@ -35,6 +35,45 @@ router.post('/generate', async (req, res) => {
     console.error('>>> Gemini error data:', JSON.stringify(err.response?.data));
     const detail = err.response?.data?.error?.message || err.response?.data?.error || err.message || 'Unknown error';
     res.status(500).json({ error: String(detail) });
+  }
+});
+
+// Streaming meal plan generation — emits each meal via SSE as it completes.
+// Frontend renders cards progressively for big perceived speedup.
+router.post('/generate-stream', async (req, res) => {
+  console.log('>>> /generate-stream hit');
+  const preferences = req.body;
+
+  if (!preferences.mealsPerWeek || !preferences.servings) {
+    return res.status(400).json({ error: 'mealsPerWeek and servings are required' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const send = (obj) => {
+    res.write(`data: ${JSON.stringify(obj)}\n\n`);
+    if (typeof res.flush === 'function') res.flush();
+  };
+
+  try {
+    await generateMealPlanStream(preferences, (meal, idx, total, err) => {
+      if (err) {
+        send({ idx, total, error: err.message || 'meal generation failed' });
+      } else if (meal) {
+        send({ idx, total, meal });
+      }
+    });
+    send({ done: true });
+  } catch (err) {
+    console.error('>>> /generate-stream fatal:', err.message);
+    send({ error: err.message || 'Unknown error' });
+  } finally {
+    res.write('data: [DONE]\n\n');
+    res.end();
   }
 });
 
